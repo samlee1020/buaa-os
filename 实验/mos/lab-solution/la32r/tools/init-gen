@@ -1,0 +1,29 @@
+#!/bin/bash
+set -e
+
+for s in "$@"; do
+	name="$(echo "$s/" | cut -f1 -d/)"
+	pri="$(echo "$s/" | cut -f2 -d/)"
+	if [ -z "$name" ]; then
+		out="$out ENV_CREATE($pri);"
+	elif [ -z "$pri" ]; then
+		out="$out ENV_CREATE(test_$name);"
+	else
+		out="$out ENV_CREATE_PRIORITY(test_$name, $pri);"
+	fi
+done
+
+# shellcheck disable=2028
+echo 'void la32r_init() {
+	printk("init.c:\tla32r_init() is called\n");
+
+	la32r_detect_memory();
+	la32r_vm_init();
+	page_init();
+	env_init();
+
+'"$out"'
+
+	schedule(0);
+	panic("init.c:\tend of la32r_init() reached!");
+}' > include/generated/init_override.h

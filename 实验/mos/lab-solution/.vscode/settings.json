@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "type_traits": "c",
+        "env.h": "c",
+        "types.h": "c"
+    }
+}

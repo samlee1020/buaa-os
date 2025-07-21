@@ -1,0 +1,54 @@
+### 异常处理访问指令
+
+在lab3-extra的实验中出现了对内存的访问需求：获取当前进程触发中断的那一条指令的内容。实验时不会访存，故在此整理。
+
+#### 指导书提到的访存
+
+>  本实验相关的映射与寻址规则（内存布局）如下： 
+>
+> * 若虚拟地址处于 0x80000000~0x9fffffff (kseg0)，则将虚拟地址的最高位置 0 得到物理 地址，通过 cache 访存。这一部分用于存放内核代码与数据。 
+> * 若虚拟地址处于 0xa0000000~0xbfffffff (kseg1)，则将虚拟地址的最高 3 位置 0 得到 物理地址，不通过 cache 访存。这一部分可以用于访问外设。 
+> * 若虚拟地址处于 0x00000000~0x7fffffff (kuseg)，则需要通过 TLB 转换成物理地址， 再通过 cache 访存。这一部分用于存放用户程序代码与数据。
+
+#### 访存例子
+
+以异常处理为例子
+
+```c
+// 一个异常处理函数，传入一个存有进程上下文信息的结构体
+void do_something(struct Trapframe *tf) {
+    // 获取当前进程（curenv）的虚拟内存的页目录（pgdir）
+	Pde* cur_pgdir = curenv->env_pgdir; 
+    // 在页目录（cur_pgdir）中查找异常中断指令的虚拟地址（tf->cp0_epc），获取二级页表项（*ppte）
+    Pte *ppte;
+	page_lookup(cur_pgdir, tf->cp0_epc, &ppte);
+	// 计算物理地址：物理地址高20位为物理页框号（来自页表项高20位），低12位为页内偏移（来自虚拟地址低12位）。
+    u_int pa_lo_12 = tf->cp0_epc & 0xFFF; 
+    u_int pa_hi_20 = PTE_ADDR(*ppte); // 宏PTE_ADDR接受页表项，返回物理页框号（实际上就是取页表项的高20位）
+	u_int pa = pa_hi_20 | pa_lo_12;
+    // 获取该物理地址对应的内核态虚拟地址
+    /*本题涉及对内存的访问，由于我们要修改的指令部分在 kuseg 区间，这一部分的虚拟地址需要通过 TLB 来获取物理地址。我们设置了程序中保存操作指令代码的.text节权限为只读，这部分空间在页表中仅被映射为 PTE_V，而不带有 PTE_D 权限，因此经由页表项无法对物理页进行写操作。可以考虑查询 curenv的页表获取对应指令的物理地址，再转化为 kseg0的虚拟地址，从而修改相应内容。*/
+    u_int kva = KADDR(pa) // 宏KADDR接受物理地址，返回kesg0处虚地址
+    // 读取指令
+    u_int *p_inst = (u_int *)kva;
+    u_int inst = *p_inst;
+    // 其余处理
+    ...
+}
+```
+
+如此，变量`inst`就是当前进程`curenv`的内存空间中，虚拟地址为`tf->cp0_epc`处的内容。
+
+#### 相关函数及原理
+
+程序是位于`kuseg`的，故`tf->cp0_epc`可以通过访问页表的形式获取程序的引发中断的指令。但注意到，这里并没有直接使用`tf->cp0_epc`来进行相关指令的访问与修改，实际上是因为程序中的`.text`字段是不可修改的，也即虚拟地址`tf->cp0_epc`只可读不可写，故这里不能直接用。故先通过查页表的方式转化成物理地址，然后再找到这个物理地址在`kseg0`中映射的位置，用`kseg0`的虚拟地址就可以修改了，这是因为内核态有权限直接读写`kseg0`处内容。
+
+```c
+static int pgdir_walk(Pde *pgdir, u_long va, int create, Pte **ppte);
+struct Page *page_lookup(Pde *pgdir, u_long va, Pte **ppte);
+```
+
+访问页表用到了`page_lookup`函数：
+
+* `pgdir_walk`是访问一级页表（页目录），获取一级页表项。
+* `page_lookup`是访问二级页表，获取二级页表项。该函数会调用`pgdir_walk`函数。

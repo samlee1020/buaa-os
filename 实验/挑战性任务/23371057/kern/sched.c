@@ -1,0 +1,58 @@
+#include <env.h>
+#include <pmap.h>
+#include <printk.h>
+
+/* Overview:
+ *   Implement a round-robin scheduling to select a runnable env and schedule it using 'env_run'.
+ *
+ * Post-Condition:
+ *   If 'yield' is set (non-zero), 'curenv' should not be scheduled again unless it is the only
+ *   runnable env.
+ *
+ * Hints:
+ *   1. The variable 'count' used for counting slices should be defined as 'static'.
+ *   2. Use variable 'env_sched_list', which contains and only contains all runnable envs.
+ *   3. You shouldn't use any 'return' statement because this function is 'noreturn'.
+ */
+void schedule(int yield) {
+	static int count = 0; // remaining time slices of current env
+	struct Env *e = curenv;
+
+	/* We always decrease the 'count' by 1.
+	 *
+	 * If 'yield' is set, or 'count' has been decreased to 0, or 'e' (previous 'curenv') is
+	 * 'NULL', or 'e' is not runnable, then we pick up a new env from 'env_sched_list' (list of
+	 * all runnable envs), set 'count' to its priority, and schedule it with 'env_run'. **Panic
+	 * if that list is empty**.
+	 *
+	 * (Note that if 'e' is still a runnable env, we should move it to the tail of
+	 * 'env_sched_list' before picking up another env from its head, or we will schedule the
+	 * head env repeatedly.)
+	 *
+	 * Otherwise, we simply schedule 'e' again.
+	 *
+	 * You may want to use macros below:
+	 *   'TAILQ_FIRST', 'TAILQ_REMOVE', 'TAILQ_INSERT_TAIL'
+	 */
+	/* Exercise 3.12: Your code here. */
+	
+	if (yield || count == 0 || e == NULL || e->env_status != ENV_RUNNABLE) {
+		// 如果yield被设置，或，count被减少为0，或，e是空指针，或，e处于阻塞态
+
+		// 如果当前e 存在且是可运行的，则将其从调度列表中移除，并插入到列表的尾部。这是为了确保其他进程也有机会被调度。
+		if (e != NULL && e->env_status == ENV_RUNNABLE) {
+			TAILQ_REMOVE(&env_sched_list, e, env_sched_link);
+			TAILQ_INSERT_TAIL(&env_sched_list, e, env_sched_link);
+		}
+
+		// 从调度列表的头部选择一个新的进程 e。将 count 设置为新进程的优先级（env_pri）。
+		e = TAILQ_FIRST(&env_sched_list);
+		if (e == NULL) {
+			panic("schedule: no runnable envs\n");
+		}
+		count = e->env_pri;
+	}
+	count--;
+	env_run(e);
+
+}
