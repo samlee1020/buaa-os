@@ -1,6 +1,6 @@
 ## BUAA-OS-2025-Shell挑战性任务
 
-——by 李元星
+——by Sam Lee
 
 ### shell任务设计
 
